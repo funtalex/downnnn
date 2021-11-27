@@ -1,0 +1,394 @@
+#include <iostream>
+#include <vector>
+#include <string>
+
+class BigInteger;
+
+BigInteger operator-(const BigInteger&, const BigInteger&);
+BigInteger operator*(const BigInteger&, const BigInteger&);
+BigInteger operator/(const BigInteger&, const BigInteger&);
+
+class BigInteger {
+public:
+  BigInteger() {}
+  BigInteger(long long num) {
+    if (num < 0) {
+      num = -num;
+      positive_ = false;
+    }
+    if (num == 0) {
+      size_ = capacity_ = 1;
+      bigint_.push_back(0);
+    }
+    while (num != 0) {
+      bigint_.push_back(num % num_system_);
+      num /= num_system_;
+      ++size_;
+      ++capacity_;
+    }
+  }
+  BigInteger(const BigInteger& num) : size_(num.size_), positive_(num.positive_) { // мы можем присваивать ёмкость, так как это инициализация
+    for (size_t i = 0; i < size_; ++i) {
+      put(num.bigint_[i], i);
+    }
+    capacity_ = num.capacity_;
+  }
+
+  BigInteger& operator=(const BigInteger& num) {
+    BigInteger copy = num;
+    swap(copy);
+    return *this;
+  }
+
+  ~BigInteger() {}
+
+  explicit operator bool() const {
+    for (size_t i = 0; i < size_; ++i) {
+      if (bigint_[i] != 0) {
+        return true;
+      }
+    }
+    return false; //we don't need to check case when size_ == 0  because we return false and don't go in cycle;
+  }
+
+  std::string toString() const {
+    std::string str;
+    if (!positive_) {
+      str.push_back('-');
+    }
+    for (int i = size_ - 1; i >= 0; --i) {
+      str += std::to_string(bigint_[i]);
+    }
+    return str;
+  }
+
+  BigInteger operator-() const {
+    BigInteger copy = *this;
+    copy.positive_ = (*this == 0 ? positive_ : !positive_);
+    return copy;
+  }
+
+  BigInteger& operator+=(const BigInteger& num) {
+    int carry = 0;
+    int sign1 = 1;
+    int sign2 = 1;
+    if (positive_ != num.positive_) { //wow!
+      positive_ = num.positive_;
+      if (*this <= num) {
+        positive_ = true;
+        if (num.positive_) {
+          sign1 = -1;
+        }
+        else {
+          sign2 = -1;
+        }
+      }
+      else {
+        positive_ = false;
+        if (num.positive_) {
+          sign2 = -1;
+        }
+        else {
+          sign1 = -1;
+        }
+      }
+    }
+    size_t max_size = 1;
+    for (size_t i = 0; i < num.size_ || carry != 0; ++i) {
+      long long sum = (carry + sign1 * get(i) + sign2 * num.get(i));
+      if (sum < 0) {
+        carry = -1;
+        sum += num_system_;
+      }
+      else if (sum >= num_system_) {
+        carry = 1;
+        sum %= num_system_;
+      }
+      else {
+        carry = 0;
+      }
+      put(sum, i);
+    }
+    for (size_t i = 0; i < size_; ++i) {
+      if (bigint_[i] != 0)
+        max_size = i + 1;
+    }
+    size_ = max_size;
+    return *this;
+  }
+
+
+  BigInteger& operator-=(const BigInteger& num) {
+    return *this += -num;
+
+  }
+
+  BigInteger& operator++() {
+    return *this += 1;
+  }
+
+  BigInteger operator++(int) {
+    BigInteger copy = *this;
+    *this += 1;
+    return copy;
+  }
+
+  BigInteger& operator--() {
+    return *this -= 1;
+  }
+  BigInteger operator--(int) {
+    BigInteger copy = *this;
+    *this -= 1;
+    return copy;
+  }
+
+  BigInteger& operator*=(const BigInteger& num) {
+    BigInteger sum = 0;
+    int carry = 0;
+    for (size_t i = 0; i < num.size_; ++i) {
+      BigInteger miniprod = 0;
+      miniprod.shift(i);
+      for (size_t j = 0; j < size_ + 1; ++j) {
+        long long prod = get(j) * num.get(i) + carry;
+        carry = prod / num_system_;
+        miniprod.put(prod % num_system_, i + j);
+      }
+      miniprod.size_ = size_ + 1;
+      sum += miniprod;
+    }
+    sum.positive_ = positive_ == num.positive_ || sum == 0;
+    *this = sum;
+    size_t max_size = 1;
+    for (size_t i = 0; i < sum.size_; ++i) {
+      if (get(i)) {
+        max_size = i + 1;
+      }
+    }
+    size_ = max_size;
+    return *this;
+  }
+
+  BigInteger& operator/=(const BigInteger& num) {
+    if (*this == 0 || num == 0) {
+      return *this = 0;
+    }
+    bool sign = positive_ == num.positive_;
+    BigInteger result = 0;
+    positive_ = true;
+    for (int i = size_ - 1; i >= 0; --i) {
+      BigInteger div = 0;
+      div.shift(i);
+      div.size_ = i + 1;
+      size_t left = 0;
+      size_t right = num_system_;
+      while (right - left > 1) {
+        size_t mid = (left + right) >> 1;
+        div.put(mid, i);
+        if ((num.positive_ ? 1 : -1) * div * num <= *this) {
+          left = mid;
+        }
+        else {
+          right = mid;
+        }
+      }
+      div.put(left, i);
+      result += div;
+      *this -= (num.positive_ ? 1 : -1) * div * num;
+    }
+    *this = result;
+    positive_ = sign || size_ == 1 && bigint_[0] == 0;
+    return *this;
+  }
+
+  //BigInteger& operator/=(const BigInteger& num) {
+  //  bool sign = positive_ == num.positive_;
+  //  BigInteger sum = 0;
+  //  positive_ = true;
+  //  for (int i = size_ - 1; i >= 0; --i) {
+  //    BigInteger div = 0;
+  //    div.shift(i);
+  //    div.size_ = i + 1;
+  //    size_t left = 0;
+  //    size_t right = num_system_;
+  //    while (right - left > 1) {
+  //      size_t mid = (left + right) >> 1;
+  //      div.put(mid, i);
+  //      if ((num.positive_ ? 1 : -1) * div * num <= *this) {
+  //        left = mid;
+  //      }
+  //      else {
+  //        right = mid;
+  //      }
+  //    }
+  //    div.put(left, i);
+  //    sum += div;
+  //    *this -= (num.positive_ ? 1 : -1) * div * num;
+  //  }
+  //  *this = sum;
+  //  positive_ = sign || size_ == 1 && bigint_[0] == 0;
+  //  return *this;
+  //}
+  
+  BigInteger& operator%=(const BigInteger& num) {
+    return *this = *this - *this / num * num;
+  }
+
+  friend bool operator<(const BigInteger&, const BigInteger&);
+  friend bool operator==(const BigInteger&, const BigInteger&);
+  friend bool operator<=(const BigInteger&, const BigInteger&);
+  friend bool operator>=(const BigInteger&, const BigInteger&);
+  friend bool operator!=(const BigInteger&, const BigInteger&);
+  friend bool operator>(const BigInteger&, const BigInteger&);
+  friend std::istream& operator>>(std::istream&, BigInteger&);
+  friend std::ostream& operator<<(std::ostream&, const BigInteger&);
+
+private:
+  size_t size_ = 0;
+  bool positive_ = true;
+  size_t capacity_ = 0;
+  std::vector<long long> bigint_;
+  static const size_t num_system_ = 1e9;
+  static const size_t length_system_ = 9;
+
+  void put(long long num, size_t index) {
+    if (capacity_ == index) {
+      bigint_.push_back(num);
+      ++capacity_;
+    }
+    else {
+      bigint_[index] = num; // этот прикол вызовет ошибку при индексе равном ёмкости
+    }
+  }
+  long long get(size_t index) const {
+    if (index < size_) {
+      return bigint_[index];
+    }
+    return 0;
+  }
+  void swap(BigInteger& copy) {
+    std::swap(size_, copy.size_);
+    std::swap(capacity_, copy.capacity_);
+    std::swap(positive_, copy.positive_);
+    std::swap(bigint_, copy.bigint_);
+  }
+  void shift(size_t sh) {
+    for (size_t i = 0; i < sh; ++i) { // я надеюсь число пустое изначально
+      put(0, i);
+    }
+  }
+};
+
+bool operator<(const BigInteger& first, const BigInteger& second) {
+  if (first.positive_ != second.positive_) {
+    return second.positive_;
+  }
+  if (first.size_ != second.size_)
+    return (first.size_ < second.size_)  == first.positive_;
+  for (int i = first.size_ - 1; i >= 0; --i) {
+    if (first.bigint_[i] != second.bigint_[i])
+      return (first.bigint_[i] < second.bigint_[i]) ^ !first.positive_;
+  }
+  return false;
+}
+
+bool operator==(const BigInteger& first, const BigInteger& second) {
+  if (first.size_ != second.size_ || first.positive_ != second.positive_)
+    return false;
+  for (size_t i = 0; i < first.size_; ++i) {
+    if (first.bigint_[i] != second.bigint_[i])
+      return false;
+  }
+  return true;
+}
+
+bool operator>(const BigInteger& first, const BigInteger& second) {
+  return second < first;
+}
+
+bool operator!=(const BigInteger& first, const BigInteger& second) {
+  return !(first == second);
+}
+
+bool operator<=(const BigInteger& first, const BigInteger& second) {
+  return first == second || first < second;
+}
+
+bool operator>=(const BigInteger& first, const BigInteger& second) {
+  return first == second || second < first;
+}
+
+BigInteger operator+(const BigInteger& first, const BigInteger& second) {
+  BigInteger copy = first;
+  copy += second;
+  return copy;
+}
+
+BigInteger operator-(const BigInteger& first, const BigInteger& second) {
+  BigInteger copy = first;
+  copy -= second;
+  return copy;
+}
+
+BigInteger operator*(const BigInteger& first, const BigInteger& second) {
+  BigInteger copy = first;
+  copy *= second;
+  return copy;
+}
+
+BigInteger operator/(const BigInteger& first, const BigInteger& second) {
+  BigInteger copy = first;
+  copy /= second;
+  return copy;
+}
+
+BigInteger operator%(const BigInteger& first, const BigInteger& second) {
+  BigInteger copy = first;
+  copy %= second;
+  return copy;
+}
+
+std::istream& operator>>(std::istream& in, BigInteger& num) {
+  std::string str;
+  in >> str;
+  if (str[0] == '-') {
+    num.positive_ = false;
+    str = str.substr(1, str.size() - 1);
+  }
+  num.size_ = (str.size() + num.length_system_ - 1) / num.length_system_;
+  int start = str.size() - num.length_system_;
+  for (size_t i = 0; i < num.size_; ++i) {
+    if (start < 0) {
+      num.put(std::stoi(str.substr(0, start + num.length_system_)), i);
+      break;
+    }
+    num.put(std::stoi(str.substr(start, num.length_system_)), i);
+    start -= num.length_system_;
+  }
+  return in;
+}
+
+std::ostream& operator<<(std::ostream& out, const BigInteger& num) {
+  if (!num.positive_) {
+    out << '-';
+  }
+  for (int i = num.size_ - 1; i >= 0; --i) {
+    if (i != num.size_ - 1) {
+      long long a = num.bigint_[i];
+      size_t cnt = 0;
+      if (a == 0) {
+        cnt = 1;
+      } 
+      else {
+        while (a > 0) {
+          ++cnt;
+          a /= 10;
+        }
+      }
+      for (size_t j = 0; j < (num.length_system_ - cnt); ++j) {
+        out << '0';
+      }
+    }
+    out << num.bigint_[i];
+  }
+  return out;
+}
